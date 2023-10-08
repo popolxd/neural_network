@@ -2,10 +2,10 @@ import numpy as np
 from keras.datasets import mnist
 import json
 
+current_network = "xavier_init.json"
 if_train = input('Do you wanna train the network: (random key: Yes, n: No) ')
 
-# sublisty predstavujú riadky a položky v nich stĺpce !!!!
-with open('data.json', 'r') as f:
+with open(current_network, 'r') as f:
     values = json.load(f)
 
 (train_x, train_y), (test_x, test_y) = mnist.load_data()
@@ -130,82 +130,131 @@ def is_right(output, true_answer):
         return 1
     else:
         return 0
-
-if if_train != 'n':
+    
+def train_network(alpha, alpha_decay, batch_size, num_of_steps):
     updating_vectors = None
-    alpha = 0.02
+    current_alpha = alpha
 
-    num_of_steps = int(input('input number of training steps: (optimal 3 < x < 200) '))
+    rand_num = np.random.randint(0, 60000 / batch_size)
 
-    for i in range(num_of_steps * 100):
-        result = multiply_matrixes(0, train_x[i].flatten() / 255)
+    for i in range(rand_num * batch_size, (rand_num + num_of_steps) * batch_size):
 
-        current_vectors = one_datapiece_backpropagation(result, train_y[i])
+        result = multiply_matrixes(0, train_x[i % 60000].flatten() / 255)
 
-        if i % 100 == 0:
+        current_vectors = one_datapiece_backpropagation(result, train_y[i % 60000])
+
+        if (i - rand_num * batch_size) % ((num_of_steps * batch_size) / 10) == 0:
+            print(str((i - rand_num * batch_size) / (num_of_steps * batch_size) * 100) + '%')
+
+        if i % batch_size == 0:
             updating_vectors = current_vectors
         else:
             for j in range(len(updating_vectors['bias_gradients'])):
                 updating_vectors['bias_gradients'][j] = np.add(updating_vectors['bias_gradients'][j], current_vectors['bias_gradients'][j])
                 updating_vectors['weight_gradients'][j] = np.add(updating_vectors['weight_gradients'][j], current_vectors['weight_gradients'][j])
 
-        if i % 100 == 99:
-            for j in range(len(updating_vectors['bias_gradients'])):
-                values['biases'][j] = np.subtract(values['biases'][j], updating_vectors['bias_gradients'][j] * alpha).tolist()
-                values['weights'][j] = np.subtract(values['weights'][j], updating_vectors['weight_gradients'][j] * alpha).tolist()
+        if i % batch_size == batch_size - 1:
 
-                alpha *= 1
+            for j in range(len(updating_vectors['bias_gradients'])):
+                values['biases'][j] = np.subtract(values['biases'][j], updating_vectors['bias_gradients'][j] * current_alpha).tolist()
+                values['weights'][j] = np.subtract(values['weights'][j], updating_vectors['weight_gradients'][j] * current_alpha).tolist()
+
+        current_alpha *= alpha_decay
 
     ## SAVING THE LEARNING PROGRESS
 
-    with open('data.json', 'w') as f:
+    with open(current_network, 'w') as f:
         json.dump(values, f, indent=2)
 
+def calculate_error(num_of_exaples):
+    error = 0
+    accuracy = 0
+
+    if num_of_exaples < 10000:
+        rand_num = np.random.randint(0, 10000 - num_of_exaples)
+    else:
+        rand_num = 0
+
+    for i in range(rand_num, rand_num + num_of_exaples):
+        result = multiply_matrixes(0, test_x[i].flatten() / 255)
+
+        error += calculate_one_cost(result[len(result) - 1], test_y[i])
+        accuracy += is_right(result[len(result) - 1], test_y[i])
+
+    return [error / num_of_exaples, accuracy / num_of_exaples * 100]
+
+if if_train != 'n':
+    alpha = 0.025
+    alpha_decay = 1
+    batch_size = 50
+    num_of_steps = 1200
+
+    train_network(alpha, alpha_decay, batch_size, num_of_steps)
+
 else:
-    initialize_weights = input('What to do? (initialize weights: i, test error: t, play_around: random input) ')
+    initialize_weights = input('What to do? (initialize weights: i, test error: t, big_test: b, play around: random input) ')
     
     if initialize_weights == 'i':
-        non = [784, 16, 16, 10]
+
+        is_xavier = input('wanna use xavier initialization? (y: Yes. random input: No)')
+        first_hidden_layer = int(input('number of neurons in 1. hidden layer: '))
+        second_hidden_layer = int(input('number of neurons in 2. hidden layer: '))
+
+        non = [784, first_hidden_layer, second_hidden_layer, 10]
 
         values = {
             'weights': [],
             'biases': []
         }
 
-        for i in range(4):
+        if is_xavier == 'y':
+            for i in range(4):
 
-            if i != 3:
-                values['weights'].append([])
+                if i != 3:
+                    values['weights'].append([])
 
-                for j in range(non[i + 1]):
-                    values['weights'][i].append([])
+                    for j in range(non[i + 1]):
+                        values['weights'][i].append([])
 
-                    for k in range(non[i]):
-                        values['weights'][i][j].append(np.random.randn())
+                        for k in range(non[i]):
+                            values['weights'][i][j].append(np.random.randn() * np.sqrt(1 / non[i]))
 
-            if i != 0:
-                values['biases'].append([])
+                if i != 0:
+                    values['biases'].append([])
 
-                for j in range(non[i]):
-                    values['biases'][i - 1].append(0)
+                    for j in range(non[i]):
+                        values['biases'][i - 1].append(0)
+
+        else:
+            for i in range(4):
+
+                if i != 3:
+                    values['weights'].append([])
+
+                    for j in range(non[i + 1]):
+                        values['weights'][i].append([])
+
+                        for k in range(non[i]):
+                            values['weights'][i][j].append(np.random.randn())
+
+                if i != 0:
+                    values['biases'].append([])
+
+                    for j in range(non[i]):
+                        values['biases'][i - 1].append(0)
         
-        with open('data.json', 'w') as f:
+        with open(current_network, 'w') as f:
             json.dump(values, f, indent=2)
 
-    elif initialize_weights == 't':
-        error = 0
-        accuracy = 0
+    elif initialize_weights == 't' or initialize_weights == 'b':
+        num = 500
+        if initialize_weights == 'b':
+            num = 10000
 
-        for i in range(500):
-            rand_num = np.random.randint(0, 10000)
-            result = multiply_matrixes(0, test_x[rand_num].flatten() / 255)
+        result = calculate_error(num)
 
-            error += calculate_one_cost(result[len(result) - 1], test_y[rand_num])
-            accuracy += is_right(result[len(result) - 1], test_y[rand_num])
-
-        print('average error: ' + str(error / 500))
-        print('accuracy: ' + str(accuracy * 100 / 500) + '%')
-
+        print('average error: ' + str(result[0]))
+        print('accuracy: ' + str(result[1]) + '%')
 
     else:
         import pygame
